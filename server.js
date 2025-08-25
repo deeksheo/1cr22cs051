@@ -1,40 +1,27 @@
-// server.js
-// Run: node server.js
-
 const express = require("express");
 const bodyParser = require("body-parser");
 const { Log, requestLogger } = require("./logger");
 const { createShortcodeEntry, getEntry, addClick, getStats } = require("./storage");
-
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 app.use(bodyParser.json());
-
-// attach request-level logger (will post an info after each response)
 app.use(requestLogger({ stack: "backend", package: "route" }));
-
-// Utilities
 function nowPlusMinutesIso(minutes) {
   const d = new Date(Date.now() + minutes * 60000);
   return d.toISOString();
 }
-
 function isValidUrl(s) {
   try {
     new URL(s);
     return true;
   } catch (e) { return false; }
 }
-
-// Base62 charset
 const ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 function randShort(len = 6) {
   let out = "";
   for (let i = 0; i < len; i++) out += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
   return out;
 }
-
 function generateUniqueShortcode(checkFn) {
   // try different lengths to reduce collisions
   for (const len of [6,7,8]) {
@@ -43,15 +30,11 @@ function generateUniqueShortcode(checkFn) {
       if (!checkFn(s)) return s;
     }
   }
-  // fallback to timestamp-based
   return "s" + Date.now().toString(36);
 }
-
 function isAlphanumeric(s) {
   return /^[0-9a-zA-Z]+$/.test(s);
 }
-
-// POST /shorturls - create short url
 app.post("/shorturls", async (req, res) => {
   try {
     const { url, validity, shortcode } = req.body || {};
@@ -59,13 +42,10 @@ app.post("/shorturls", async (req, res) => {
       await Log("backend","error","handler","create shorturl: invalid url provided").catch(()=>{});
       return res.status(400).json({ error: "url (string) required and must be valid" });
     }
-
     const validityMinutes = Number.isInteger(validity) ? validity : 30;
     if (validity !== undefined && (!Number.isInteger(validity) || validity <= 0)) {
       await Log("backend","warn","handler","create shorturl: invalid validity provided, defaulting").catch(()=>{});
     }
-
-    // shortcode handling
     let finalCode = null;
     if (shortcode !== undefined) {
       if (typeof shortcode !== "string" || !isAlphanumeric(shortcode)) {
@@ -76,7 +56,6 @@ app.post("/shorturls", async (req, res) => {
         await Log("backend","error","handler","create shorturl: shortcode length invalid").catch(()=>{});
         return res.status(400).json({ error: "shortcode length must be between 4 and 20" });
       }
-      // check uniqueness
       const existing = getEntry(shortcode);
       if (existing) {
         await Log("backend","error","handler","create shorturl: shortcode collision").catch(()=>{});
@@ -84,7 +63,6 @@ app.post("/shorturls", async (req, res) => {
       }
       finalCode = shortcode;
     } else {
-      // generate
       finalCode = generateUniqueShortcode(code => !!getEntry(code));
     }
 
@@ -103,7 +81,6 @@ app.post("/shorturls", async (req, res) => {
   }
 });
 
-// Redirect route
 app.get("/:code", async (req, res) => {
   try {
     const code = req.params.code;
@@ -118,7 +95,6 @@ app.get("/:code", async (req, res) => {
       return res.status(410).json({ error: "short link expired" });
     }
 
-    // collect click meta
     const click = {
       ts: new Date().toISOString(),
       referrer: req.get("referer") || null,
@@ -137,7 +113,6 @@ app.get("/:code", async (req, res) => {
   }
 });
 
-// GET stats
 app.get("/shorturls/:code", async (req, res) => {
   try {
     const code = req.params.code;
@@ -154,8 +129,6 @@ app.get("/shorturls/:code", async (req, res) => {
     return res.status(500).json({ error: "internal server error" });
   }
 });
-
-// Basic health route
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
